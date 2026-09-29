@@ -216,7 +216,7 @@ Four GitHub Actions workflows (public repo: Actions minutes are free):
 
 | workflow | schedule (UTC) | does |
 |---|---|---|
-| `snapshot` | every 5 min (`2-59/5`) | fetch the 6 endpoints once each, sequentially; upload one chunk to today's release. Stdlib only, ~40 s |
+| `snapshot` | every ~5 min, **self-dispatching chain** (cron at :07/:37 only restarts it) | wait until ≥285 s after the previous chunk; fetch the 6 endpoints once each, sequentially; upload one chunk to today's release; dispatch the next run. Stdlib only |
 | `daily` | 06:17 and 18:17 | backstop `sin.json` fetch + dead-endpoint probe; download un-ingested chunks (14-day look-back); parse into `data/`; manifests; gap report; alerts; watchdog; **commit**; re-enable schedules |
 | `exports` | Mon 07:43 | rebuild consolidated exports and publish them to the `exports` release |
 | `tests` | on push | the test suite, with `TZ=Asia/Kolkata` to show the runner timezone doesn't leak into the data |
@@ -230,9 +230,17 @@ Design choices, and why:
   `sin.json`, so the trend is re-captured 288 times a day. The twice-daily backstop
   covers the case where the 5-minute job is down. A trend gap only opens if
   *every* fetch fails for more than 24 h.
-* **Scheduled workflows can be delayed** (often 5–15 min under load), or skipped
-  outright. That only affects the snapshot streams: their real cadence is recorded
-  per day in `snapshot_cadence.csv` and printed by the gap report.
+* **GitHub's cron cannot hold a 5-minute cadence.** On 2026-09-29 the
+  `*/5` schedule fired 2 times in 10 hours and `daily` ran 4 h late. So
+  `snapshot` is a chain: each run dispatches the next (`workflow_dispatch` from
+  `GITHUB_TOKEN` is allowed to start runs). The cron is only a restarter.
+  Spacing is enforced in code (`sitr/pace.py`), which reads the previous chunk's time
+  from the release and waits until 285 s have passed, so duplicate triggers can
+  never poll CND faster. The optional **environment `pacer`** (Settings →
+  Environments → `pacer` → Wait timer = 4 min) makes GitHub hold each queued run
+  without occupying a runner; without it the pace step waits on the runner.
+  The real cadence is recorded per day in `snapshot_cadence.csv`, printed by the
+  gap report, and alerted on (`snapshot-cadence`).
 * **The 60-day inactivity rule.** GitHub disables scheduled workflows in repos with no activity
   for 60 days. The daily job commits `last_daily_run.txt` on every run and
   calls `gh workflow enable` for all three.
@@ -269,6 +277,7 @@ condition clears (except gaps and drift, which you close after noting them).
 | key | meaning | what to do |
 |---|---|---|
 | `snapshot-stale` | no successful fetch in 90 min | Actions tab → `snapshot`. Disabled? Enable it. Failing? Read the log. GitHub outage? Wait. |
+| `snapshot-cadence` | fewer than half the expected snapshots in 12 h | the chain has stopped: Actions → `snapshot` → *Run workflow* restarts it. Check the last run's log for why it didn't dispatch |
 | `sin-stale` | no `sin.json` for 6 h | **Urgent**: trend data older than 24 h is lost for good if this lasts. Run `trend-capture` from any machine and upload the chunk (§13). |
 | `fetch-failing` | every endpoint failed in one run | usually the site is down; check <https://sitr.cnd.com.pa/m/> in a browser |
 | `blocked` | 401/403 or a Cloudflare challenge | **Do not work around it.** See §12. If only GitHub IPs are blocked, run the same code on a VPS (`python -m sitr snapshot` from cron + `scripts/upload_chunks.sh`). |

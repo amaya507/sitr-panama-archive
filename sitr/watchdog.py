@@ -11,6 +11,7 @@ from .consolidate import chunk_info
 SNAPSHOT_STALE = timedelta(minutes=90)
 SIN_STALE = timedelta(hours=6)          # trend window is 24 h; alert with 18 h to spare
 FAILURE_RATE_ALERT = 0.2                # per endpoint, over the last 12 h
+CADENCE_ALERT_FRACTION = 0.5            # alert below half the expected snapshots in 12 h
 
 
 def recent_chunks(days: int = 2) -> list:
@@ -56,6 +57,16 @@ def check(now: datetime | None = None, chunks: list | None = None) -> list[str]:
         github.resolve_alert("sin-stale", f"sin.json captured at {last_sin:%Y-%m-%d %H:%M}Z")
 
     window = [c for c in chunks if now - c.started_utc <= timedelta(hours=12) and c.kind == "snap"]
+    expected = 12 * 60 // 5
+    if len(window) < CADENCE_ALERT_FRACTION * expected:
+        msg = (f"Only {len(window)} snapshot fetches in the last 12 h (expected ~{expected} at 5-min cadence). "
+               "Snapshot streams have no history at the source, so this resolution is lost for good.\n\n"
+               "Check the `snapshot` workflow: is the self-dispatch chain running (a new run every ~5 min in the "
+               "Actions tab)? If not, start it with Actions -> snapshot -> Run workflow.")
+        problems.append(msg)
+        github.raise_alert("snapshot-cadence", f"Snapshot cadence degraded ({len(window)}/{expected} in 12 h)", msg)
+    else:
+        github.resolve_alert("snapshot-cadence", f"{len(window)}/{expected} snapshots in the last 12 h")
     if window:
         for ep in config.LIVE_ENDPOINTS:
             rate = sum(ep in c.failed for c in window) / len(window)

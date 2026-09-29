@@ -1,25 +1,39 @@
-# Every 5 minutes: fetch the six live endpoints once each (sequentially) and
+# Every ~5 minutes: fetch the six live endpoints once each (sequentially) and
 # store the raw responses as one chunk in that day's GitHub release.
-# No pip install, no commit: fast and cheap. Parsing happens in `daily`.
+#
+# Cadence: GitHub's cron scheduler is far too unreliable for a 5-minute
+# interval (on 2026-09-29 it fired 2 of ~120 expected runs). So each run
+# dispatches the next one (a workflow_dispatch from GITHUB_TOKEN is allowed to
+# start a new run). The cron below only RESTARTS the chain if it ever breaks.
+#
+# Spacing is enforced by `python -m sitr pace`, which waits until >= 285 s
+# after the previous chunk, so duplicate triggers can never poll CND faster.
+# The optional environment "pacer" (Settings -> Environments, wait timer 4 min)
+# makes GitHub hold the queued run without occupying a runner; without it the
+# pace step does the waiting on the runner. Either way the cadence is ~5 min.
+#
+# To STOP all capture: Actions -> snapshot -> "..." -> Disable workflow.
 name: snapshot
 
 on:
   schedule:
-    - cron: "2-59/5 * * * *"   # offset from :00, when GitHub's scheduler is busiest
+    - cron: "7,37 * * * *"   # chain restarter only
   workflow_dispatch:
 
 permissions:
   contents: write   # create releases / upload assets
   issues: write     # alerts
+  actions: write    # dispatch the next run in the chain
 
 concurrency:
   group: snapshot
-  cancel-in-progress: false
+  cancel-in-progress: false   # at most one running + one pending; extra triggers collapse
 
 jobs:
   capture:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
+    environment: pacer
     env:
       GH_TOKEN: ${{ github.token }}
       GITHUB_TOKEN: ${{ github.token }}
@@ -34,11 +48,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Pace (never less than 285 s after the previous fetch)
+        run: python -m sitr pace --min-interval 285
+
       - name: Fetch endpoints
         run: python -m sitr snapshot --out chunks
 
       - name: Upload chunk to daily release
         run: bash scripts/upload_chunks.sh chunks
+
+      - name: Dispatch next run in the chain
+        if: ${{ !cancelled() }}
+        run: |
+          pending=$(gh run list --workflow snapshot.yml --limit 20 --json status \
+            --jq '[.[] | select(.status=="queued" or .status=="waiting" or .status=="pending" or .status=="requested")] | length')
+          if [ "$pending" = "0" ]; then
+            for i in 1 2 3 4 5; do gh workflow run snapshot.yml --ref main && break; sleep $((i * 5)); done
+          else
+            echo "a snapshot run is already queued; not dispatching another"
+          fi
 
       - name: Keep chunk as artifact if upload failed
         if: failure()

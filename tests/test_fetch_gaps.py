@@ -100,3 +100,38 @@ def test_watchdog_flags_stale(monkeypatch):
     fresh = [chunk_info(Path(f"sitr_20260929T11{m:02d}00Z_snap_ok5of6-xsin.tar.gz")) for m in range(0, 60, 5)]
     watchdog.check(now=now, chunks=fresh)
     assert "endpoint-failing-sin" in raised and "snapshot-stale" not in raised
+
+
+def test_pace_enforces_minimum_spacing(monkeypatch):
+    from datetime import timedelta
+    from sitr import pace
+    now = datetime.now(timezone.utc)
+    slept = []
+    monkeypatch.setattr(pace, "last_snapshot_time", lambda: now - timedelta(seconds=100))
+    pace.pace(285, sleep=slept.append)
+    assert 180 <= slept[0] <= 186                      # waits out the remaining ~185 s
+    slept.clear()
+    monkeypatch.setattr(pace, "last_snapshot_time", lambda: now - timedelta(seconds=600))
+    assert pace.pace(285, sleep=slept.append) == 0 and slept == []
+    def boom():
+        raise OSError("api down")
+    monkeypatch.setattr(pace, "last_snapshot_time", boom)
+    pace.pace(285, sleep=slept.append)
+    assert slept == [285]                              # unknown -> conservative full wait
+
+
+def test_watchdog_flags_low_cadence(monkeypatch):
+    raised = []
+    monkeypatch.setattr("sitr.github.raise_alert", lambda key, *a, **k: raised.append(key))
+    monkeypatch.setattr("sitr.github.resolve_alert", lambda *a, **k: None)
+    now = datetime(2026, 9, 29, 22, 0, tzinfo=timezone.utc)
+    # what actually happened on 2026-09-29: two scheduled runs in 10 hours
+    few = [chunk_info(Path(n)) for n in ("sitr_20260929T170023Z_snap_ok6of6.tar.gz",
+                                          "sitr_20260929T212250Z_snap_ok6of6.tar.gz")]
+    watchdog.check(now=now, chunks=few)
+    assert "snapshot-cadence" in raised and "snapshot-stale" not in raised
+    raised.clear()
+    full = [chunk_info(Path(f"sitr_20260929T{h:02d}{m:02d}00Z_snap_ok6of6.tar.gz"))
+            for h in range(10, 22) for m in range(0, 60, 5)]
+    watchdog.check(now=now, chunks=full)
+    assert raised == []

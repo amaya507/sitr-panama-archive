@@ -121,6 +121,12 @@ def cmd_gaps(a) -> int:
     return 0
 
 
+def cmd_pace(a) -> int:
+    from .pace import pace
+    pace(a.min_interval)
+    return 0
+
+
 def cmd_verify(a) -> int:
     from .verify import verify
     ok, text = verify(Path(a.data))
@@ -184,6 +190,10 @@ def main(argv=None) -> int:
     s.add_argument("--since", help="Panama-local start, e.g. '2026-10-01 00:00'")
     s.add_argument("--until", help="Panama-local end")
     s.set_defaults(func=cmd_gaps)
+
+    s = sub.add_parser("pace", help="wait until min-interval seconds after the last snapshot chunk")
+    s.add_argument("--min-interval", type=float, default=285)
+    s.set_defaults(func=cmd_pace)
 
     s = sub.add_parser("verify", help="compare the store against a fresh sin.json fetch")
     s.add_argument("--data", default=str(config.DATA_DIR))

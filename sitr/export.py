@@ -1,4 +1,4 @@
-"""Consolidated, human-openable exports (these are what get mirrored to Drive).
+"""Consolidated, human-openable exports (published weekly to the `exports` release).
 
 export/
   gap_report.txt

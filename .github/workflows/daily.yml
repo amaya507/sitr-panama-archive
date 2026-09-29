@@ -68,7 +68,7 @@ jobs:
 
       - name: Keep scheduled workflows enabled
         run: |
-          for wf in snapshot.yml daily.yml mirror.yml; do gh workflow enable "$wf" || true; done
+          for wf in snapshot.yml daily.yml exports.yml; do gh workflow enable "$wf" || true; done
 
       - name: Alert if backstop upload failed
         if: steps.upload.outcome == 'failure'

@@ -5,6 +5,5 @@ __pycache__/
 chunks/
 new_chunks/
 export/
-mirror_work/
 *.parquet.tmp
 *.part

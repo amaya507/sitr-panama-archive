@@ -25,7 +25,7 @@ Maintainer contact (also sent in every request's User-Agent): rigoamaya23@gmail.
 7. [Completeness and verification](#7-completeness-and-verification)
 8. [Alerts, and what to do about each](#8-alerts-and-what-to-do-about-each)
 9. [Reparsing raw history](#9-reparsing-raw-history)
-10. [Google Drive mirror](#10-google-drive-mirror)
+10. [Downloadable exports](#10-downloadable-exports)
 11. [Citing this dataset](#11-citing-this-dataset)
 12. [Being a polite client / if CND asks us to stop](#12-being-a-polite-client--if-cnd-asks-us-to-stop)
 13. [Local development](#13-local-development)
@@ -110,7 +110,7 @@ demand as a preliminary value that the operator revises.
 |---|---|---|---|
 | **Parsed record** | Long-format Parquet + manifests | `data/` in this git repo | forever, versioned by commit |
 | **Raw archive** | Every response, byte-for-byte | GitHub **Releases** `raw-YYYY-MM-DD` (one per UTC day, one `.tar.gz` asset per fetch) | forever |
-| Mirror | Consolidated exports, gap report, monthly raw bundles | Google Drive `02_Data/SITR/` | convenience copy |
+| Exports | Consolidated yearly trend (CSV + Parquet), monthly per-stream Parquet, gap report | GitHub release [`exports`](https://github.com/amaya507/sitr-panama-archive/releases/tag/exports), rebuilt weekly | convenience copy, always regenerable from `data/` |
 
 Raw files are deliberately **not** in git: at about 7 MB/day of already-gzipped
 data (2.6 GB/year) the repository would become unclonable, and deleting files
@@ -132,7 +132,6 @@ data/
     drift_log.csv                every schema-drift kind ever seen, first/last chunk
     fetch_log/fetch_log_YYYY-MM.parquet   per-fetch HTTP status, retries, latency
     endpoint_probes.csv          daily status of the dead endpoints
-    drive_raw_archive.csv        monthly raw bundles verified in Drive
     last_daily_run.txt
 ```
 
@@ -219,7 +218,7 @@ Four GitHub Actions workflows (public repo: Actions minutes are free):
 |---|---|---|
 | `snapshot` | every 5 min (`2-59/5`) | fetch the 6 endpoints once each, sequentially; upload one chunk to today's release. Stdlib only, ~40 s |
 | `daily` | 06:17 and 18:17 | backstop `sin.json` fetch + dead-endpoint probe; download un-ingested chunks (14-day look-back); parse into `data/`; manifests; gap report; alerts; watchdog; **commit**; re-enable schedules |
-| `mirror` | Mon 07:43 | exports + monthly raw bundles to Drive (verified with `rclone check`) |
+| `exports` | Mon 07:43 | rebuild consolidated exports and publish them to the `exports` release |
 | `tests` | on push | the test suite, with `TZ=Asia/Kolkata` to show the runner timezone doesn't leak into the data |
 
 Design choices, and why:
@@ -278,7 +277,7 @@ condition clears (except gaps and drift, which you close after noting them).
 | `trend-gap` | new missing minutes in the trend | not recoverable; note it for the methodology and close the issue |
 | `dead-endpoint-alive` | a 404 endpoint now returns 200 | inspect `probe/<name>.json` in that chunk; consider adding it to `LIVE_ENDPOINTS` |
 | `snapshot-workflow`, `daily-workflow`, `backstop-upload` | pipeline errors | read the run log. A chunk that failed to upload is kept as a run artifact for 30 days |
-| `drive-mirror` | Drive push failed | capture is unaffected; see §10 |
+| `exports` | weekly export publish failed | capture is unaffected; rerun `exports` from the Actions tab |
 
 ## 9. Reparsing raw history
 
@@ -303,9 +302,6 @@ rm -rf data/snapshots data/trend && mv rebuilt/snapshots rebuilt/trend data/
 git add -A data && git commit -m "data: reparse with parser vX (reason)"
 ```
 
-Or pull a Drive month bundle: `tar -xf sitr-raw-2026-10.tar` gives the same
-chunk files. `.chunks.sha256` lists a checksum for each one.
-
 To look at one raw response: `tar -xzf sitr_...tar.gz raw/sin.json`, or
 `sitr.capture.read_chunk(path)` → `(meta, {endpoint: bytes}, probes)`.
 
@@ -313,39 +309,27 @@ Merges are idempotent, so reparsing into the existing `data/` (without
 `--no-ledger`) only adds what is missing. A fresh directory is cleaner when the
 parse logic itself changed.
 
-## 10. Google Drive mirror
+## 10. Downloadable exports
 
-The weekly `mirror` workflow writes to the rclone remote `sitr:`, whose root is
-the `02_Data/SITR/` folder:
+The weekly `exports` workflow rebuilds these from `data/` and replaces the
+assets of the release [`exports`](https://github.com/amaya507/sitr-panama-archive/releases/tag/exports):
 
-```
-SITR/
-  exports/gap_report.txt
-  exports/trend/sitr_trend_minute_YYYY.parquet|.csv, sitr_trend_samples_YYYY.parquet
-  exports/snapshots/<stream>/<stream>_YYYY-MM.parquet
-  raw_archive/YYYY-MM/sitr-raw-YYYY-MM.tar (+ .tar.sha256, .chunks.sha256)
-```
+| file | contents |
+|---|---|
+| `sitr_trend_minute_YYYY.csv` / `.parquet` | canonical 1-minute trend, long format (`timestamp_utc, timestamp_local, stream, entity, field, value, unit, n_samples`) |
+| `sitr_trend_samples_YYYY.parquet` | every sample and every revision |
+| `<stream>_YYYY-MM.parquet` | each snapshot stream, one file per month |
+| `gap_report.txt` | the completeness report |
 
-Raw bundles cover completed months only. Each is checked with `rclone check`
-(hash comparison) before it is recorded in `data/manifest/drive_raw_archive.csv`.
-Nothing is ever deleted from Releases or git on the strength of the Drive copy.
+The same files can be built locally at any time: `python -m sitr export --out export`.
+The exports are a convenience copy. Cite a repository commit (§11), not the release.
 
-Credentials come from repository secrets (Settings → Secrets and variables →
-Actions). The folder ID goes in `GDRIVE_SITR_FOLDER_ID`. Then either:
-
-* **Service account** (`GDRIVE_SERVICE_ACCOUNT_JSON`): the key JSON of a Google
-  Cloud service account with the Drive API enabled, with SITR/ shared to its email as
-  Editor. **Caveat:** service accounts have no storage quota, so they can
-  only write into a *Shared Drive* (Google Workspace), not a personal My Drive
-  folder. If SITR/ is in a Shared Drive, also set `GDRIVE_SHARED_DRIVE_ID`.
-* **OAuth limited to files rclone created** (`GDRIVE_CLIENT_ID`,
-  `GDRIVE_CLIENT_SECRET`, `GDRIVE_OAUTH_TOKEN`, and repository *variable*
-  `GDRIVE_SCOPE=drive.file`). With the `drive.file` scope the token can only
-  see files it created itself, so if it leaks, it reaches only the SITR mirror.
-  Publish the OAuth consent screen ("In production"). In "Testing" mode,
-  refresh tokens expire after 7 days.
-
-A failed mirror opens a `drive-mirror` issue and changes nothing else.
+A Google Drive mirror was considered and deliberately dropped (2026-09-29).
+Service accounts have no storage quota and cannot write into a personal My Drive
+folder, and the only credential that could (a user OAuth token) was ruled out.
+Git plus Releases already give two durable copies. If a Drive copy is ever
+wanted, see commit `32b99dd` for an untested rclone mirror (`sitr/mirror.py`,
+`.github/workflows/mirror.yml`) that can be restored.
 
 ## 11. Citing this dataset
 
@@ -389,7 +373,7 @@ and the next `daily` run ingests it.
 Code map: `fetch.py` (HTTP), `capture.py` (chunks), `parse.py` (raw → long rows,
 drift), `store.py` (Parquet, dedupe), `consolidate.py` (ingest + manifests),
 `gaps.py`, `verify.py`, `watchdog.py`, `github.py` (issues/releases),
-`export.py`, `mirror.py`, `config.py` (everything source-specific).
+`export.py`, `config.py` (everything source-specific).
 
 ## 14. Facts verified on 2026-09-29
 

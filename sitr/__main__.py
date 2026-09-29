@@ -141,11 +141,6 @@ def cmd_export(a) -> int:
     return 0
 
 
-def cmd_mirror(a) -> int:
-    from .mirror import mirror
-    return mirror(Path(a.data), Path(a.work), remote=a.remote, dry_run=a.dry_run)
-
-
 def cmd_alert(a) -> int:
     from . import github
     github.raise_alert(a.key, a.title, a.body)
@@ -201,13 +196,6 @@ def main(argv=None) -> int:
     s.add_argument("--data", default=str(config.DATA_DIR))
     s.add_argument("--out", default="export")
     s.set_defaults(func=cmd_export)
-
-    s = sub.add_parser("mirror", help="export + monthly raw bundles -> Google Drive via rclone")
-    s.add_argument("--data", default=str(config.DATA_DIR))
-    s.add_argument("--work", default="mirror_work")
-    s.add_argument("--remote", default="sitr:")
-    s.add_argument("--dry-run", action="store_true")
-    s.set_defaults(func=cmd_mirror)
 
     s = sub.add_parser("alert", help="file/refresh an alert issue")
     s.add_argument("--key", required=True)

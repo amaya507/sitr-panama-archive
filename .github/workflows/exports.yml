@@ -1,0 +1,48 @@
+# Weekly: rebuild consolidated, human-openable exports and publish them as
+# assets of the fixed release "exports" (replacing last week's files).
+# Download without cloning: https://github.com/amaya507/sitr-panama-archive/releases/tag/exports
+name: exports
+
+on:
+  schedule:
+    - cron: "43 7 * * 1"   # Mondays 07:43 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: exports
+  cancel-in-progress: false
+
+jobs:
+  exports:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Build exports
+        run: python -m sitr export --out export
+
+      - name: Publish to the "exports" release
+        run: |
+          NOTES="Rebuilt $(date -u +%Y-%m-%dT%H:%MZ) from commit ${GITHUB_SHA}. Trend: sitr_trend_minute_YYYY (canonical 1-minute series, long format, CSV + Parquet) and sitr_trend_samples_YYYY (every sample and revision). Snapshots: <stream>_YYYY-MM.parquet. gap_report.txt: completeness. For citation use a commit of the repository, not this release."
+          gh release view exports >/dev/null 2>&1 || gh release create exports --latest=false --title "Consolidated exports (rebuilt weekly)" --notes "$NOTES"
+          find export -type f -print0 | xargs -0 gh release upload exports --clobber
+          gh release edit exports --notes "$NOTES"
+
+      - name: Alert
+        if: failure()
+        run: python -m sitr alert --key exports --title "Weekly exports failed" --body "Capture and data/ are unaffected; only the downloadable exports are stale. See the run log."

@@ -1,0 +1,9 @@
+[project]
+name = "sitr-panama-archive"
+version = "1.0.0"
+description = "Unattended archive of public real-time telemetry from Panama's CND SITR"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = [".", "tests"]
+testpaths = ["tests"]

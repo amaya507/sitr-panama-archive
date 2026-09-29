@@ -1,0 +1,57 @@
+# Every 5 minutes: fetch the six live endpoints once each (sequentially) and
+# store the raw responses as one chunk in that day's GitHub release.
+# No pip install, no commit: fast and cheap. Parsing happens in `daily`.
+name: snapshot
+
+on:
+  schedule:
+    - cron: "2-59/5 * * * *"   # offset from :00, when GitHub's scheduler is busiest
+  workflow_dispatch:
+
+permissions:
+  contents: write   # create releases / upload assets
+  issues: write     # alerts
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            sitr
+            scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch endpoints
+        run: python -m sitr snapshot --out chunks
+
+      - name: Upload chunk to daily release
+        run: bash scripts/upload_chunks.sh chunks
+
+      - name: Keep chunk as artifact if upload failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chunk-${{ github.run_id }}
+          path: chunks/
+          retention-days: 30
+
+      - name: Alert
+        if: failure()
+        run: >
+          python -m sitr alert --key snapshot-workflow
+          --title "Snapshot workflow failed"
+          --body "A snapshot run failed inside the pipeline (not a source outage, which is alerted separately).
+          If the upload step failed, the chunk is kept as a workflow artifact for 30 days (README 'Recovering a chunk')."

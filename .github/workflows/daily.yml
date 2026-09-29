@@ -1,0 +1,79 @@
+# Twice a day, 12 h apart:
+#  1. backstop fetch of sin.json (the 24 h trend) + probe of the dead endpoints
+#  2. download every not-yet-ingested chunk from the last 14 days of releases
+#  3. parse into data/ (long format, deduped), update manifests, gap report
+#  4. alerts: drift, new trend gaps, stale capture, revived endpoints
+#  5. commit data/ (this commit also keeps the scheduled workflows alive)
+name: daily
+
+on:
+  schedule:
+    - cron: "17 6,18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  actions: write   # re-enable scheduled workflows (60-day inactivity guard)
+
+concurrency:
+  group: data-writer
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Backstop sin.json capture + dead-endpoint probe
+        run: python -m sitr trend-capture --out new_chunks
+
+      - name: Upload backstop chunk
+        id: upload
+        continue-on-error: true
+        run: bash scripts/upload_chunks.sh new_chunks
+
+      - name: Download chunks to ingest
+        run: |
+          python -m sitr download --dest chunks --days 14
+          cp backfill/*.tar.gz chunks/ 2>/dev/null || true
+          cp new_chunks/*.tar.gz chunks/
+
+      - name: Consolidate, gap report, alerts, watchdog
+        run: python -m sitr daily --chunks chunks
+
+      - name: Commit data
+        run: |
+          date -u +%Y-%m-%dT%H:%M:%SZ > data/manifest/last_daily_run.txt
+          git config user.name "sitr-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          git commit -q -m "data: consolidation $(date -u +%Y-%m-%dT%H:%MZ)" || echo "nothing to commit"
+          for i in 1 2 3 4 5; do
+            git pull -q --rebase && git push -q && break
+            sleep $((i * 10))
+          done
+
+      - name: Keep scheduled workflows enabled
+        run: |
+          for wf in snapshot.yml daily.yml mirror.yml; do gh workflow enable "$wf" || true; done
+
+      - name: Alert if backstop upload failed
+        if: steps.upload.outcome == 'failure'
+        run: python -m sitr alert --key backstop-upload --title "Daily backstop chunk upload failed" --body "Parsed data was still ingested; only the raw copy of this one fetch is missing from Releases."
+
+      - name: Alert
+        if: failure()
+        run: python -m sitr alert --key daily-workflow --title "Daily consolidation workflow failed" --body "Raw chunks are safe in Releases; consolidation will retry on the next run (it looks back 14 days)."

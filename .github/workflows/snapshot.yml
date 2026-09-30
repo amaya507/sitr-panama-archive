@@ -48,8 +48,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Pace (never less than 285 s after the previous fetch)
-        run: python -m sitr pace --min-interval 285
+      - name: Pace (never less than 285 s after the previous run or fetch)
+        # Fallback: if the pace command itself fails for any reason, wait the full
+        # interval anyway, so a failing run can never make the chain spin fast.
+        run: python -m sitr pace --min-interval 285 || sleep 285
 
       - name: Fetch endpoints
         run: python -m sitr snapshot --out chunks

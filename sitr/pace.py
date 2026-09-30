@@ -8,12 +8,13 @@ cron triggers) can make us poll CND faster than the configured interval.
 """
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import config, github
-from .consolidate import chunk_info
+from .chunks import chunk_info
 
 
 def last_snapshot_time(now: datetime | None = None) -> datetime | None:
@@ -34,10 +35,32 @@ def last_snapshot_time(now: datetime | None = None) -> datetime | None:
     return latest
 
 
+def previous_run_start(workflow: str = "snapshot.yml") -> datetime | None:
+    """Start time of the most recent OTHER run of this workflow (success or not).
+    Pacing on runs as well as chunks means a run that failed before uploading
+    still counts, so failures can never turn the chain into a tight loop."""
+    me = os.environ.get("GITHUB_RUN_ID")
+    runs = github.request("GET", f"/repos/{github.repo()}/actions/workflows/{workflow}/runs?per_page=10")
+    starts = []
+    for r in runs.get("workflow_runs", []):
+        if str(r.get("id")) == me or not r.get("run_started_at"):
+            continue
+        if r.get("status") == "completed" and r.get("conclusion") == "cancelled":
+            continue
+        starts.append(datetime.fromisoformat(r["run_started_at"].replace("Z", "+00:00")))
+    return max(starts) if starts else None
+
+
+def last_activity() -> datetime | None:
+    times = [t for t in (last_snapshot_time(), previous_run_start()) if t is not None]
+    return max(times) if times else None
+
+
 def pace(min_interval_s: float, max_wait_s: float = 360, sleep=time.sleep) -> float:
-    """Sleep until at least min_interval_s after the last snapshot. Returns seconds slept."""
+    """Sleep until at least min_interval_s after the last snapshot chunk or the
+    previous run's start, whichever is later. Returns seconds slept."""
     try:
-        last = last_snapshot_time()
+        last = last_activity()
     except Exception as e:  # noqa: BLE001 - if GitHub is unreachable, be conservative
         print(f"[pace] could not read last chunk ({e}); waiting the full interval", flush=True)
         sleep(min_interval_s)

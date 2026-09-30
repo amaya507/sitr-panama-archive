@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import config, github
-from .consolidate import chunk_info
+from .chunks import chunk_info
 
 SNAPSHOT_STALE = timedelta(minutes=90)
 SIN_STALE = timedelta(hours=6)          # trend window is 24 h; alert with 18 h to spare

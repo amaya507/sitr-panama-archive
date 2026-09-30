@@ -15,31 +15,9 @@ import pandas as pd
 
 from . import config, store
 from .capture import read_chunk
+from .chunks import CHUNK_RE, ChunkInfo, chunk_info  # noqa: F401 (re-exported)
 from .parse import parse_endpoint
 from .timeutil import now_utc, parse_compact
-
-CHUNK_RE = re.compile(r"^sitr_(\d{8}T\d{6}Z)_([a-z]+)_ok(\d+)of(\d+)((?:-x[A-Za-z0-9]+)*)\.tar\.gz$")
-
-
-@dataclass
-class ChunkInfo:
-    path: Path
-    name: str
-    started_utc: datetime
-    kind: str
-    n_ok: int
-    n: int
-    failed: list[str]
-
-
-def chunk_info(path: Path) -> ChunkInfo | None:
-    m = CHUNK_RE.match(path.name)
-    if not m:
-        return None
-    ts, kind, ok, n, fails = m.groups()
-    failed = [f for f in fails.split("-x") if f] if fails else []
-    return ChunkInfo(path, path.name, parse_compact(ts), kind, int(ok), int(n), failed)
-
 
 @dataclass
 class Result:

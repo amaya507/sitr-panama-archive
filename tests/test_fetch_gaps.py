@@ -107,15 +107,15 @@ def test_pace_enforces_minimum_spacing(monkeypatch):
     from sitr import pace
     now = datetime.now(timezone.utc)
     slept = []
-    monkeypatch.setattr(pace, "last_snapshot_time", lambda: now - timedelta(seconds=100))
+    monkeypatch.setattr(pace, "last_activity", lambda: now - timedelta(seconds=100))
     pace.pace(285, sleep=slept.append)
     assert 180 <= slept[0] <= 186                      # waits out the remaining ~185 s
     slept.clear()
-    monkeypatch.setattr(pace, "last_snapshot_time", lambda: now - timedelta(seconds=600))
+    monkeypatch.setattr(pace, "last_activity", lambda: now - timedelta(seconds=600))
     assert pace.pace(285, sleep=slept.append) == 0 and slept == []
     def boom():
         raise OSError("api down")
-    monkeypatch.setattr(pace, "last_snapshot_time", boom)
+    monkeypatch.setattr(pace, "last_activity", boom)
     pace.pace(285, sleep=slept.append)
     assert slept == [285]                              # unknown -> conservative full wait
 
@@ -135,3 +135,17 @@ def test_watchdog_flags_low_cadence(monkeypatch):
             for h in range(10, 22) for m in range(0, 60, 5)]
     watchdog.check(now=now, chunks=full)
     assert raised == []
+
+
+def test_snapshot_job_modules_import_without_pandas():
+    """The 5-minute job installs nothing: everything it runs must be stdlib-only.
+    (A pandas import in pace.py caused a runaway failure loop on 2026-09-30.)"""
+    import subprocess
+    import sys
+    code = ("import sys; sys.modules['pandas'] = None; sys.modules['pyarrow'] = None; sys.modules['numpy'] = None\n"
+            "import sitr.__main__, sitr.pace, sitr.capture, sitr.fetch, sitr.github, sitr.chunks, sitr.watchdog\n"
+            "from sitr.__main__ import main\n"
+            "main(['pace', '--help'])")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                       cwd=Path(__file__).resolve().parent.parent)
+    assert "ModuleNotFoundError" not in r.stderr and "ImportError" not in r.stderr, r.stderr

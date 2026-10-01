@@ -20,6 +20,8 @@ from .fetch import FetchResult, fetch
 from .timeutil import fmt_compact, now_utc
 
 CHUNK_FORMAT_VERSION = 1
+BUDGET_RETRY_S = 120
+BUDGET_TOTAL_S = 240
 
 
 def code_version() -> str:
@@ -53,10 +55,20 @@ def capture(
     out_dir.mkdir(parents=True, exist_ok=True)
     started = now_utc()
     results: list[FetchResult] = []
+    t_start = time.monotonic()
     for i, name in enumerate(endpoints):
         if i:
             sleep(config.PAUSE_BETWEEN_REQUESTS_S)
-        r = fetcher(name)
+        # Budget: one slow endpoint must not starve the others or the chain.
+        # Past BUDGET_RETRY_S, no more retries; past BUDGET_TOTAL_S, skip (recorded).
+        elapsed = time.monotonic() - t_start
+        if elapsed > BUDGET_TOTAL_S:
+            r = FetchResult(name=name, url=config.BASE_URL + name + ".json",
+                            error=f"skipped: capture budget of {BUDGET_TOTAL_S}s exhausted", fetched_at_utc=now_utc())
+        elif elapsed > BUDGET_RETRY_S:
+            r = fetcher(name, attempts=1)
+        else:
+            r = fetcher(name)
         results.append(r)
         print(f"[fetch] {name}: status={r.status} ok={r.ok} bytes={len(r.body or b'')} "
               f"attempts={r.attempts} {r.error or ''}", flush=True)

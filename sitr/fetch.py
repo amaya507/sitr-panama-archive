@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import random
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -65,6 +66,7 @@ def fetch(
     timeout: float = config.HTTP_TIMEOUT_S,
     backoff_base: float = config.HTTP_BACKOFF_BASE_S,
     validate_json: bool = True,
+    deadline: float = config.HTTP_DEADLINE_S,
     sleep=time.sleep,
     opener=urllib.request.urlopen,
 ) -> FetchResult:
@@ -79,24 +81,11 @@ def fetch(
         retry_after = None
         t0 = time.monotonic()
         res.fetched_at_utc = now_utc()
-        try:
-            with opener(req, timeout=timeout) as resp:
-                res.status = resp.status
-                res.headers = {k: v for k, v in resp.headers.items() if k.lower() in KEEP_HEADERS}
-                res.body = resp.read()
-        except urllib.error.HTTPError as e:
-            res.status = e.code
-            res.headers = {k: v for k, v in (e.headers or {}).items() if k.lower() in KEEP_HEADERS}
-            try:
-                res.body = e.read()
-            except Exception:  # noqa: BLE001
-                res.body = None
-            res.error = f"HTTP {e.code}"
-            retry_after = _retry_after(e.headers)
-        except Exception as e:  # noqa: BLE001 - URLError, timeouts, resets
-            res.status = None
-            res.body = None
-            res.error = f"{type(e).__name__}: {e}"
+        out = _with_deadline(lambda: _attempt(opener, req, timeout), deadline)
+        if out is None:  # hung (DNS, stalled or trickling connection): treat as a timeout
+            res.status, res.headers, res.body, res.error = None, {}, None, f"deadline exceeded ({deadline:.0f}s)"
+        else:
+            res.status, res.headers, res.body, res.error, retry_after = out
         res.elapsed_s = time.monotonic() - t0
 
         if res.status == 200 and res.body is not None and validate_json:
@@ -115,6 +104,36 @@ def fetch(
             delay = max(delay, min(retry_after, 120))
         sleep(delay)
     return res
+
+
+def _attempt(opener, req, timeout):
+    """One HTTP attempt -> (status, headers, body, error, retry_after)."""
+    try:
+        with opener(req, timeout=timeout) as resp:
+            headers = {k: v for k, v in resp.headers.items() if k.lower() in KEEP_HEADERS}
+            return resp.status, headers, resp.read(), None, None
+    except urllib.error.HTTPError as e:
+        headers = {k: v for k, v in (e.headers or {}).items() if k.lower() in KEEP_HEADERS}
+        try:
+            body = e.read()
+        except Exception:  # noqa: BLE001
+            body = None
+        return e.code, headers, body, f"HTTP {e.code}", _retry_after(e.headers)
+    except Exception as e:  # noqa: BLE001 - URLError, timeouts, resets
+        return None, {}, None, f"{type(e).__name__}: {e}", None
+
+
+def _with_deadline(fn, seconds: float):
+    """Run fn in a daemon thread; return its result, or None if it is still
+    running after `seconds`. urllib's timeout bounds each socket operation, not
+    the whole request: a stalled DNS lookup or a server trickling bytes can hang
+    far longer (a fetch hung >10 min on 2026-10-01). The abandoned thread is a
+    daemon, so it never blocks process exit."""
+    box: list = []
+    t = threading.Thread(target=lambda: box.append(fn()), daemon=True)
+    t.start()
+    t.join(seconds)
+    return box[0] if box else None
 
 
 def _retry_after(headers) -> float | None:

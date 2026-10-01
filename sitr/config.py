@@ -28,7 +28,8 @@ USER_AGENT = (
 # dependence on the runner's timezone database or TZ variable.
 PANAMA_TZ = timezone(timedelta(hours=-5), "America/Panama")
 
-HTTP_TIMEOUT_S = 30
+HTTP_TIMEOUT_S = 30          # per socket operation
+HTTP_DEADLINE_S = 60         # hard cap per attempt, whole request (see fetch._with_deadline)
 HTTP_ATTEMPTS = 4
 HTTP_BACKOFF_BASE_S = 2.0
 PAUSE_BETWEEN_REQUESTS_S = 1.0

@@ -149,3 +149,27 @@ def test_snapshot_job_modules_import_without_pandas():
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                        cwd=Path(__file__).resolve().parent.parent)
     assert "ModuleNotFoundError" not in r.stderr and "ImportError" not in r.stderr, r.stderr
+
+
+def test_hung_request_hits_hard_deadline():
+    import time as _t
+    def hang(req, timeout):
+        _t.sleep(5)  # e.g. a stalled DNS lookup that urllib's timeout does not cover
+    t0 = _t.monotonic()
+    r = fetch("sin", attempts=2, deadline=0.2, opener=hang, sleep=lambda s: None)
+    assert not r.ok and "deadline exceeded" in r.error and r.attempts == 2
+    assert _t.monotonic() - t0 < 2
+
+
+def test_capture_budget_skips_rather_than_hangs(tmp_path, monkeypatch):
+    from sitr import capture
+    monkeypatch.setattr(capture, "BUDGET_RETRY_S", -1)   # already past both budgets
+    monkeypatch.setattr(capture, "BUDGET_TOTAL_S", -1)
+    calls = []
+    def fake(name, **kw):
+        calls.append(name)
+        return FetchResult(name, "u", status=200, body=b"{}")
+    path, meta = capture.capture("snap", ["sin", "gen"], tmp_path, fetcher=fake, sleep=lambda s: None)
+    assert calls == []                                    # nothing fetched once over budget
+    assert all("budget" in m["error"] for m in meta["endpoints"].values())
+    assert path.name.endswith("_snap_ok0of2-xsin-xgen.tar.gz")

@@ -66,9 +66,11 @@ jobs:
             sleep $((i * 10))
           done
 
-      - name: Keep scheduled workflows enabled
+      - name: Keep scheduled workflows enabled, and restart the snapshot chain if it died
         run: |
           for wf in snapshot.yml daily.yml exports.yml; do gh workflow enable "$wf" || true; done
+          active=$(gh run list --workflow snapshot.yml --limit 20 --json status             --jq '[.[] | select(.status!="completed")] | length')
+          if [ "$active" = "0" ]; then echo "snapshot chain not running: restarting"; gh workflow run snapshot.yml --ref main; fi
 
       - name: Alert if backstop upload failed
         if: steps.upload.outcome == 'failure'

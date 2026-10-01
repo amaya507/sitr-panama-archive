@@ -3,8 +3,8 @@
 #
 # Cadence: GitHub's cron scheduler is far too unreliable for a 5-minute
 # interval (on 2026-09-29 it fired 2 of ~120 expected runs). So each run
-# dispatches the next one (a workflow_dispatch from GITHUB_TOKEN is allowed to
-# start a new run). The cron below only RESTARTS the chain if it ever breaks.
+# queues the next one as its FIRST step (a workflow_dispatch from GITHUB_TOKEN
+# is allowed to start a new run; GitHub holds it until the current run ends). The cron below only RESTARTS the chain if it ever breaks.
 #
 # Spacing is enforced by `python -m sitr pace`, which waits until >= 285 s
 # after the previous chunk, so duplicate triggers can never poll CND faster.
@@ -32,7 +32,7 @@ concurrency:
 jobs:
   capture:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     environment: pacer
     env:
       GH_TOKEN: ${{ github.token }}
@@ -48,27 +48,32 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Pace (never less than 285 s after the previous run or fetch)
-        # Fallback: if the pace command itself fails for any reason, wait the full
-        # interval anyway, so a failing run can never make the chain spin fast.
-        run: python -m sitr pace --min-interval 285 || sleep 285
-
-      - name: Fetch endpoints
-        run: python -m sitr snapshot --out chunks
-
-      - name: Upload chunk to daily release
-        run: bash scripts/upload_chunks.sh chunks
-
-      - name: Dispatch next run in the chain
-        if: ${{ !cancelled() }}
+      - name: Queue the next run in the chain (first, so even a killed run can't break it)
+        # GitHub holds the queued run until this one ends, however it ends
+        # (success, failure, timeout, cancellation). Pacing below keeps >= 285 s spacing.
+        timeout-minutes: 2
+        continue-on-error: true
         run: |
-          pending=$(gh run list --workflow snapshot.yml --limit 20 --json status \
-            --jq '[.[] | select(.status=="queued" or .status=="waiting" or .status=="pending" or .status=="requested")] | length')
+          pending=$(gh run list --workflow snapshot.yml --limit 20 --json status             --jq '[.[] | select(.status=="queued" or .status=="waiting" or .status=="pending" or .status=="requested")] | length')
           if [ "$pending" = "0" ]; then
             for i in 1 2 3 4 5; do gh workflow run snapshot.yml --ref main && break; sleep $((i * 5)); done
           else
             echo "a snapshot run is already queued; not dispatching another"
           fi
+
+      - name: Pace (never less than 285 s after the previous run or fetch)
+        # Fallback: if the pace command itself fails for any reason, wait the full
+        # interval anyway, so a failing run can never make the chain spin fast.
+        timeout-minutes: 7
+        run: python -m sitr pace --min-interval 285 || sleep 285
+
+      - name: Fetch endpoints
+        timeout-minutes: 6
+        run: python -m sitr snapshot --out chunks
+
+      - name: Upload chunk to daily release
+        timeout-minutes: 4
+        run: bash scripts/upload_chunks.sh chunks
 
       - name: Keep chunk as artifact if upload failed
         if: failure()

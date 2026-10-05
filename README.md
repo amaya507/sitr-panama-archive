@@ -94,15 +94,27 @@ instant. Consequences:
 * The **canonical 1-minute series** (`sin.trend.minute` in the exports) is the
   mean of the samples held within each minute, with `n_samples`.
 
-### 2.3 Real demand is revised after publication
+### 2.3 Published values are revised, and occasionally glitch
 
-Between fetches a few minutes apart, `Demanda Real` changes by 1–6 MW on most
-of the 24 h window. `Generación` does not change, and `Demanda Pronosticada`
-jitters by ±1 MW. So a sample can have several published values. The store
-keeps **one row per distinct (series, instant, value)**, with
-`first_seen_update_utc` and `last_seen_update_utc`, which record when each version
-was published. The canonical value is the one seen most recently. Treat real
-demand as a preliminary value that the operator revises.
+The same sample instant can be published with different values over time.
+Measured over 2026-09-28 to 2026-10-04 (461,242 samples per series):
+
+| series | samples ever revised | typical revision | p99 |
+|---|---|---|---|
+| Demanda Real | 51.7% | 1 MW | 13 MW |
+| Generación | 18.7% | 2 MW | 16 MW |
+| Demanda Pronosticada | 5.1% | 1 MW | 15 MW |
+
+The source also occasionally publishes a **transient corrupt value**. For example, one
+fetch on 2026-10-02 (`update` 10:21:13 UTC) gave Demanda Real = **16,553 MW**
+for the 22:59:13 local sample, which every other fetch gave as 1,653 MW.
+
+So the store keeps **one row per distinct (series, instant, value)** with
+`first_seen_update_utc` and `last_seen_update_utc`, and the canonical value
+(`store.canonical_trend`, and every export) is the one seen most recently. That
+picks the operator's latest version and discards one-off glitches, while keeping
+them in the record. If you need to, filter on revisions for a robustness check:
+`samples.groupby(['entity','timestamp_utc']).size() > 1`.
 
 ## 3. Where the data lives
 
@@ -392,7 +404,7 @@ These came from fetching the live site, not from documentation (there is none):
 * Trend month zero-indexed: the last point `{"m":"8","d":"29","h":"5","mi":"23"}` ↔ `update` `29-septiembre-2026 5:23:53`, fetched 10:24 UTC.
 * Trend times are Panama local (UTC−5). The last point equals `sin.data` (Generación total / Carga total).
 * `sin.json` regenerated every ~15 s (`Last-Modified` :08/:23/:38/:53 in one minute, with drifting offsets later). Files at the same offset one minute apart were identical on 1,423 of 1,440 points.
-* `Demanda Real` revised on 930 of 1,436 points between two same-offset files 4 minutes apart (max 6 MW). `Generación` never changed.
+* `Demanda Real` revised on 930 of 1,436 points between two same-offset files 4 minutes apart (max 6 MW). `Generación` did not change in that 4-minute test, but over a week 18.7% of its samples were revised (see §2.3).
 * `vert.plant/solar/eolica` end with `{"Total": x}`. `flow.occi` is 7 unnamed values. 63 tags appear in both `diagram.units` and `diagram.tooltips`.
 * Response bodies are valid UTF-8, with no BOM.
 * Seen later (2026-09-30): the source occasionally **skips a minute label** in the trend

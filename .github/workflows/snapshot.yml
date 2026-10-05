@@ -4,7 +4,8 @@
 # Cadence: GitHub's cron scheduler is far too unreliable for a 5-minute
 # interval (on 2026-09-29 it fired 2 of ~120 expected runs). So each run
 # queues the next one as its FIRST step (a workflow_dispatch from GITHUB_TOKEN
-# is allowed to start a new run; GitHub holds it until the current run ends). The cron below only RESTARTS the chain if it ever breaks.
+# is allowed to start a new run; GitHub holds it until the current run ends).
+# The cron below only RESTARTS the chain if it ever breaks.
 #
 # Spacing is enforced by `python -m sitr pace`, which waits until >= 285 s
 # after the previous chunk, so duplicate triggers can never poll CND faster.
@@ -53,13 +54,7 @@ jobs:
         # (success, failure, timeout, cancellation). Pacing below keeps >= 285 s spacing.
         timeout-minutes: 2
         continue-on-error: true
-        run: |
-          pending=$(gh run list --workflow snapshot.yml --limit 20 --json status             --jq '[.[] | select(.status=="queued" or .status=="waiting" or .status=="pending" or .status=="requested")] | length')
-          if [ "$pending" = "0" ]; then
-            for i in 1 2 3 4 5; do gh workflow run snapshot.yml --ref main && break; sleep $((i * 5)); done
-          else
-            echo "a snapshot run is already queued; not dispatching another"
-          fi
+        run: python -m sitr chain-next
 
       - name: Pace (never less than 285 s after the previous run or fetch)
         # Fallback: if the pace command itself fails for any reason, wait the full

@@ -121,6 +121,12 @@ def cmd_gaps(a) -> int:
     return 0
 
 
+def cmd_chain_next(a) -> int:
+    from .chain import queue_next
+    print(f"[chain] {queue_next()}", flush=True)
+    return 0
+
+
 def cmd_pace(a) -> int:
     from .pace import pace
     pace(a.min_interval)
@@ -190,6 +196,9 @@ def main(argv=None) -> int:
     s.add_argument("--since", help="Panama-local start, e.g. '2026-10-01 00:00'")
     s.add_argument("--until", help="Panama-local end")
     s.set_defaults(func=cmd_gaps)
+
+    s = sub.add_parser("chain-next", help="queue one successor snapshot run (excluding this run)")
+    s.set_defaults(func=cmd_chain_next)
 
     s = sub.add_parser("pace", help="wait until min-interval seconds after the last snapshot chunk")
     s.add_argument("--min-interval", type=float, default=285)

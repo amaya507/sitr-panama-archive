@@ -143,7 +143,7 @@ def test_snapshot_job_modules_import_without_pandas():
     import subprocess
     import sys
     code = ("import sys; sys.modules['pandas'] = None; sys.modules['pyarrow'] = None; sys.modules['numpy'] = None\n"
-            "import sitr.__main__, sitr.pace, sitr.capture, sitr.fetch, sitr.github, sitr.chunks, sitr.watchdog\n"
+            "import sitr.__main__, sitr.chain, sitr.pace, sitr.capture, sitr.fetch, sitr.github, sitr.chunks, sitr.watchdog\n"
             "from sitr.__main__ import main\n"
             "main(['pace', '--help'])")
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
@@ -173,3 +173,43 @@ def test_capture_budget_skips_rather_than_hangs(tmp_path, monkeypatch):
     assert calls == []                                    # nothing fetched once over budget
     assert all("budget" in m["error"] for m in meta["endpoints"].values())
     assert path.name.endswith("_snap_ok0of2-xsin-xgen.tar.gz")
+
+
+def test_chain_ignores_own_pending_run_and_dispatches(monkeypatch):
+    """Regression for the 2026-10-01..05 chain deaths."""
+    from sitr import chain
+    calls = []
+    runs = {"workflow_runs": [
+        {"id": 500, "status": "pending"},       # this run, still listed as pending
+        {"id": 499, "status": "completed"},
+    ]}
+    def req(method, path, data=None, **kw):
+        calls.append(method)
+        return runs if method == "GET" else None
+    monkeypatch.setenv("GITHUB_RUN_ID", "500")
+    monkeypatch.setattr(chain.github, "request", req)
+    assert chain.queue_next(sleep=lambda s: None) == "dispatched next run"
+    runs["workflow_runs"].append({"id": 501, "status": "queued"})   # a real successor exists
+    calls.clear()
+    assert "already queued" in chain.queue_next(sleep=lambda s: None) and calls == ["GET"]
+
+
+def test_chain_dispatches_when_listing_fails(monkeypatch):
+    from sitr import chain
+    def req(method, path, data=None, **kw):
+        if method == "GET":
+            raise OSError("502")
+        return None
+    monkeypatch.setattr(chain.github, "request", req)
+    assert chain.queue_next(sleep=lambda s: None) == "dispatched next run"
+
+
+def test_pace_ignores_successor_and_uses_end_time():
+    from sitr.pace import previous_run_end
+    runs = [
+        {"id": 501, "status": "pending", "updated_at": "2026-10-05T12:55:23Z"},    # successor: ignore
+        {"id": 500, "status": "in_progress", "updated_at": "2026-10-05T12:55:21Z"},  # me
+        {"id": 499, "status": "completed", "updated_at": "2026-10-05T12:55:18Z"},
+        {"id": 498, "status": "completed", "updated_at": "2026-10-05T12:50:16Z"},
+    ]
+    assert previous_run_end(runs, 500) == datetime(2026, 10, 5, 12, 55, 18, tzinfo=timezone.utc)

@@ -36,19 +36,27 @@ def last_snapshot_time(now: datetime | None = None) -> datetime | None:
 
 
 def previous_run_start(workflow: str = "snapshot.yml") -> datetime | None:
-    """Start time of the most recent OTHER run of this workflow (success or not).
+    """When the most recent earlier run of this workflow finished (success or not).
     Pacing on runs as well as chunks means a run that failed before uploading
     still counts, so failures can never turn the chain into a tight loop."""
-    me = os.environ.get("GITHUB_RUN_ID")
+    me = int(os.environ.get("GITHUB_RUN_ID") or 0) or None
     runs = github.request("GET", f"/repos/{github.repo()}/actions/workflows/{workflow}/runs?per_page=10")
-    starts = []
-    for r in runs.get("workflow_runs", []):
-        if str(r.get("id")) == me or not r.get("run_started_at"):
+    return previous_run_end(runs.get("workflow_runs", []), me)
+
+
+def previous_run_end(runs: list[dict], me: int | None) -> datetime | None:
+    """End time of the latest EARLIER run that has finished. Only earlier runs
+    (lower id) count: the successor this run just queued must not (on
+    2026-10-01..05 it did, doubling every run's duration). The end time, not
+    the queue time, is used: a run can sit queued for minutes before fetching."""
+    ends = []
+    for r in runs:
+        if me is not None and int(r.get("id", 0)) >= me:
             continue
-        if r.get("status") == "completed" and r.get("conclusion") == "cancelled":
+        if r.get("status") != "completed" or not r.get("updated_at"):
             continue
-        starts.append(datetime.fromisoformat(r["run_started_at"].replace("Z", "+00:00")))
-    return max(starts) if starts else None
+        ends.append(datetime.fromisoformat(r["updated_at"].replace("Z", "+00:00")))
+    return max(ends) if ends else None
 
 
 def last_activity() -> datetime | None:

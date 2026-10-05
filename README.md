@@ -395,4 +395,8 @@ These came from fetching the live site, not from documentation (there is none):
 * `Demanda Real` revised on 930 of 1,436 points between two same-offset files 4 minutes apart (max 6 MW). `Generación` never changed.
 * `vert.plant/solar/eolica` end with `{"Total": x}`. `flow.occi` is 7 unnamed values. 63 tags appear in both `diagram.units` and `diagram.tooltips`.
 * Response bodies are valid UTF-8, with no BOM.
+* Seen later (2026-09-30): the source occasionally **skips a minute label** in the trend
+  (e.g. 08:20 -> 08:22 in the file stamped 14:47:04), still returning 1,441 points.
+  Logged as `irregular_step` drift (WARN). Other fetches normally hold the missing minute;
+  the gap report shows whether any minute is actually missing.
 * Gzipped raw per snapshot cycle: 24.6 KB (26.4 KB as a chunk) ≈ 7.6 MB/day ≈ 2.7 GB/year.

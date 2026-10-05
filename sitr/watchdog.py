@@ -77,4 +77,19 @@ def check(now: datetime | None = None, chunks: list | None = None) -> list[str]:
                 github.raise_alert(key, f"{ep}.json failing ({rate:.0%})", msg)
             else:
                 github.resolve_alert(key, f"failure rate back to {rate:.0%}")
+    _resolve_workflow_alert_if_healthy()
     return problems
+
+
+def _resolve_workflow_alert_if_healthy(workflow: str = "snapshot.yml", n: int = 20) -> None:
+    """Close the snapshot-workflow alert once the last n finished runs all succeeded."""
+    if not github.token():
+        return
+    try:
+        runs = github.request("GET", f"/repos/{github.repo()}/actions/workflows/{workflow}/runs?status=completed&per_page={n}")
+        concl = [r.get("conclusion") for r in runs.get("workflow_runs", [])]
+    except Exception:  # noqa: BLE001
+        return
+    finished = [c for c in concl if c != "cancelled"]  # cancelled = collapsed duplicate triggers
+    if len(finished) >= 10 and all(c == "success" for c in finished):
+        github.resolve_alert("snapshot-workflow", f"the last {len(finished)} snapshot runs succeeded")

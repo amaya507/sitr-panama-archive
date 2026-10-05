@@ -73,7 +73,10 @@ def cmd_daily(a) -> int:
     res = consolidate(Path(a.chunks), data)
     print(f"[daily] ingested {len(res.ingested)} chunks; {len(res.changed_files)} files changed")
 
-    if res.new_drift:
+    # Known, harmless source quirks stay in drift_log.csv but do not alert (README §14).
+    alertable = [d for d in res.new_drift if d["kind"] not in config.BENIGN_DRIFT_KINDS]
+    if alertable:
+        res.new_drift = alertable
         errs = [d for d in res.new_drift if d["severity"] == "ERROR"]
         body = "New schema drift detected. Raw files are preserved; affected fields may be missing from parsed data " \
                "until the parser is updated, then history can be reparsed (README 'Reparsing').\n\n" + \

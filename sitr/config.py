@@ -76,6 +76,10 @@ EXPECTED_KEYS: dict[str, dict[str, set[str] | None]] = {
     "flow": {"msg": {"name", "description", "style"}, "occi": {"value"}, "update": None},
 }
 
+# Drift kinds that are known source quirks: logged in drift_log.csv, never alerted.
+# irregular_step: the source occasionally skips one minute label (seen 2026-09-30).
+BENIGN_DRIFT_KINDS = {"irregular_step"}
+
 TREND_EXPECTED_NAMES = ["Generación", "Demanda Real", "Demanda Pronosticada"]
 
 # Units the source does not state explicitly but which are unambiguous from the

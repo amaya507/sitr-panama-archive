@@ -379,8 +379,8 @@ public real-time data, <https://sitr.cnd.com.pa/m/>.
   or a Cloudflare challenge the pipeline alerts and does **not** retry around it.
 
 To stop immediately: Actions → `snapshot` → "…" → *Disable workflow*, and the
-same for `chain-guard` and `daily`. To throttle: change the cron in
-`.github/workflows/snapshot.yml` (e.g. `*/15`).
+same for `chain-guard` and `daily`. To throttle: raise `--min-interval` (seconds) in the pace step of
+`.github/workflows/snapshot.yml` (e.g. `900` for every 15 minutes).
 
 ## 13. Local development
 

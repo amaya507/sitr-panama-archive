@@ -44,3 +44,15 @@ def queue_next(workflow: str = "snapshot.yml", ref: str = "main", sleep=time.sle
             last = e
             sleep(5 * attempt)
     raise RuntimeError(f"could not dispatch next run after 5 attempts: {last}")
+
+
+def restart_if_idle(workflow: str = "snapshot.yml", ref: str = "main") -> str:
+    """Guard: if no run of the workflow is queued or running, start one.
+    Covers runs that never start (2026-10-05 19:19: 'job was not acquired by
+    Runner'), which therefore never queue their own successor."""
+    runs = github.request("GET", f"/repos/{github.repo()}/actions/workflows/{workflow}/runs?per_page=20")
+    active = [r for r in runs.get("workflow_runs", []) if r.get("status") != "completed"]
+    if active:
+        return f"chain alive ({len(active)} run(s) queued or running)"
+    github.request("POST", f"/repos/{github.repo()}/actions/workflows/{workflow}/dispatches", {"ref": ref})
+    return "chain was idle: started a snapshot run"

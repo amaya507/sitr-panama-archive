@@ -1,0 +1,47 @@
+# Restarts the snapshot chain if it has stopped.
+#
+# The chain (snapshot.yml) queues its own successor, but a run that never
+# starts cannot: on 2026-10-05 19:19 GitHub failed to assign a runner, the run
+# was cancelled before any step, and capture stopped for hours. This guard
+# fires when a snapshot run ends WITHOUT success (failure, cancellation, never
+# started), and every 10 minutes as a backstop. It only starts a run when none
+# is queued or running, so it can never create duplicates; pacing in
+# snapshot.yml keeps >= 285 s between fetches regardless.
+name: chain-guard
+
+on:
+  workflow_run:
+    workflows: [snapshot]
+    types: [completed]
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: chain-guard
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    # Successful snapshot runs already queued their successor: skip (no runner used).
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: sitr
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Wait a little if a run just ended (its successor may still be appearing)
+        if: github.event_name == 'workflow_run'
+        run: sleep 30
+      - name: Restart the chain if idle
+        run: python -m sitr chain-restart

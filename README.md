@@ -224,12 +224,14 @@ DuckDB works directly on the Hive-style paths:
 
 ## 6. How it runs
 
-Four GitHub Actions workflows (public repo: Actions minutes are free):
+Six GitHub Actions workflows (public repo: Actions minutes are free):
 
 | workflow | schedule (UTC) | does |
 |---|---|---|
-| `snapshot` | every ~5 min, **self-dispatching chain** (cron at :07/:37 only restarts it) | wait until ≥285 s after the previous chunk; fetch the 6 endpoints once each, sequentially; upload one chunk to today's release; dispatch the next run. Stdlib only |
+| `snapshot` | every ~5 min, **self-dispatching chain** (no cron) | wait until ≥285 s after the previous chunk; fetch the 6 endpoints once each, sequentially; upload one chunk to today's release; dispatch the next run. Stdlib only |
 | `daily` | 06:17 and 18:17 | backstop `sin.json` fetch + dead-endpoint probe; download un-ingested chunks (14-day look-back); parse into `data/`; manifests; gap report; alerts; watchdog; **commit**; re-enable schedules |
+| `chain-guard` | when a snapshot run ends without success, and every 10 min | if no snapshot run is queued or running, start one |
+| `ops` | when `ops/requests.json` is pushed | maintenance with the repo's own token: close listed issues; restart the chain if idle |
 | `exports` | Mon 07:43 | rebuild consolidated exports and publish them to the `exports` release |
 | `tests` | on push | the test suite, with `TZ=Asia/Kolkata` to show the runner timezone doesn't leak into the data |
 
@@ -244,8 +246,11 @@ Design choices, and why:
   *every* fetch fails for more than 24 h.
 * **GitHub's cron cannot hold a 5-minute cadence.** On 2026-09-29 the
   `*/5` schedule fired 2 times in 10 hours and `daily` ran 4 h late. So
-  `snapshot` is a chain: each run dispatches the next (`workflow_dispatch` from
-  `GITHUB_TOKEN` is allowed to start runs). The cron is only a restarter.
+  `snapshot` is a chain: each run's first step queues the next
+  (`sitr/chain.py`; a `workflow_dispatch` from `GITHUB_TOKEN` is allowed to start
+  runs, and GitHub holds it until the current run ends, however it ends).
+  `chain-guard` restarts the chain if a run never starts (GitHub sometimes fails
+  to assign a runner) or anything else breaks it, and so does `daily`.
   Spacing is enforced in code (`sitr/pace.py`), which reads the previous chunk's time
   from the release and waits until 285 s have passed, so duplicate triggers can
   never poll CND faster. The optional **environment `pacer`** (Settings →
@@ -373,8 +378,8 @@ public real-time data, <https://sitr.cnd.com.pa/m/>.
   and no workaround of any access control, and there must never be. On 401/403
   or a Cloudflare challenge the pipeline alerts and does **not** retry around it.
 
-To stop immediately: Actions → `snapshot` → "…" → *Disable workflow* (and the
-same for `daily`). To throttle: change the cron in
+To stop immediately: Actions → `snapshot` → "…" → *Disable workflow*, and the
+same for `chain-guard` and `daily`. To throttle: change the cron in
 `.github/workflows/snapshot.yml` (e.g. `*/15`).
 
 ## 13. Local development

@@ -213,3 +213,17 @@ def test_pace_ignores_successor_and_uses_end_time():
         {"id": 498, "status": "completed", "updated_at": "2026-10-05T12:50:16Z"},
     ]
     assert previous_run_end(runs, 500) == datetime(2026, 10, 5, 12, 55, 18, tzinfo=timezone.utc)
+
+
+def test_chain_guard_only_restarts_when_idle(monkeypatch):
+    from sitr import chain
+    posts = []
+    state = {"workflow_runs": [{"id": 1, "status": "completed"}, {"id": 2, "status": "in_progress"}]}
+    def req(method, path, data=None, **kw):
+        if method == "POST":
+            posts.append(path)
+        return state if method == "GET" else None
+    monkeypatch.setattr(chain.github, "request", req)
+    assert "alive" in chain.restart_if_idle() and posts == []
+    state["workflow_runs"][1]["status"] = "completed"   # e.g. the run that never got a runner
+    assert "started" in chain.restart_if_idle() and len(posts) == 1

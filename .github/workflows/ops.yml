@@ -11,6 +11,7 @@ on:
 permissions:
   issues: write
   contents: read
+  actions: write
 
 jobs:
   ops:
@@ -21,6 +22,11 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Restart the snapshot chain if idle
+        run: python -m sitr chain-restart
       - name: Close requested issues (idempotent)
         run: |
           jq -c '.close_issues[]' ops/requests.json | while read -r req; do

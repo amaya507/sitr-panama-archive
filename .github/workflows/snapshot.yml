@@ -5,7 +5,7 @@
 # interval (on 2026-09-29 it fired 2 of ~120 expected runs). So each run
 # queues the next one as its FIRST step (a workflow_dispatch from GITHUB_TOKEN
 # is allowed to start a new run; GitHub holds it until the current run ends).
-# The cron below only RESTARTS the chain if it ever breaks.
+# If the chain ever breaks, .github/workflows/chain-guard.yml restarts it.
 #
 # Spacing is enforced by `python -m sitr pace`, which waits until >= 285 s
 # after the previous chunk, so duplicate triggers can never poll CND faster.
@@ -17,9 +17,7 @@
 name: snapshot
 
 on:
-  schedule:
-    - cron: "7,37 * * * *"   # chain restarter only
-  workflow_dispatch:
+  workflow_dispatch:   # started by the previous run, by chain-guard.yml, or by daily/ops
 
 permissions:
   contents: write   # create releases / upload assets

@@ -130,6 +130,12 @@ def cmd_chain_next(a) -> int:
     return 0
 
 
+def cmd_chain_restart(a) -> int:
+    from .chain import restart_if_idle
+    print(f"[chain-guard] {restart_if_idle()}", flush=True)
+    return 0
+
+
 def cmd_pace(a) -> int:
     from .pace import pace
     pace(a.min_interval)
@@ -202,6 +208,9 @@ def main(argv=None) -> int:
 
     s = sub.add_parser("chain-next", help="queue one successor snapshot run (excluding this run)")
     s.set_defaults(func=cmd_chain_next)
+
+    s = sub.add_parser("chain-restart", help="start a snapshot run if none is queued or running")
+    s.set_defaults(func=cmd_chain_restart)
 
     s = sub.add_parser("pace", help="wait until min-interval seconds after the last snapshot chunk")
     s.add_argument("--min-interval", type=float, default=285)

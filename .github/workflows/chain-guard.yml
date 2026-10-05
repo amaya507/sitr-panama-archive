@@ -3,16 +3,18 @@
 # The chain (snapshot.yml) queues its own successor, but a run that never
 # starts cannot: on 2026-10-05 19:19 GitHub failed to assign a runner, the run
 # was cancelled before any step, and capture stopped for hours. This guard
-# fires when a snapshot run ends WITHOUT success (failure, cancellation, never
-# started), and every 10 minutes as a backstop. It only starts a run when none
-# is queued or running, so it can never create duplicates; pacing in
-# snapshot.yml keeps >= 285 s between fetches regardless.
+# runs every 10 minutes (GitHub's cron is late and sometimes skips, so `daily`
+# restarts the chain too). It only starts a run when none is queued or running,
+# so it can never create duplicates; pacing in snapshot.yml keeps >= 285 s
+# between fetches regardless.
+#
+# Not used: an `on: workflow_run` trigger. Snapshot runs are started by
+# GITHUB_TOKEN, and events caused by GITHUB_TOKEN do not start workflows (only
+# workflow_dispatch/repository_dispatch are exempt; GitHub docs), and on
+# 2026-10-05 it indeed did not fire after chain runs.
 name: chain-guard
 
 on:
-  workflow_run:
-    workflows: [snapshot]
-    types: [completed]
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
@@ -27,8 +29,6 @@ concurrency:
 
 jobs:
   guard:
-    # Successful snapshot runs already queued their successor: skip (no runner used).
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
@@ -40,8 +40,5 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: Wait a little if a run just ended (its successor may still be appearing)
-        if: github.event_name == 'workflow_run'
-        run: sleep 30
       - name: Restart the chain if idle
         run: python -m sitr chain-restart

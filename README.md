@@ -230,7 +230,7 @@ Six GitHub Actions workflows (public repo: Actions minutes are free):
 |---|---|---|
 | `snapshot` | every ~5 min, **self-dispatching chain** (no cron) | wait until ≥285 s after the previous chunk; fetch the 6 endpoints once each, sequentially; upload one chunk to today's release; dispatch the next run. Stdlib only |
 | `daily` | 06:17 and 18:17 | backstop `sin.json` fetch + dead-endpoint probe; download un-ingested chunks (14-day look-back); parse into `data/`; manifests; gap report; alerts; watchdog; **commit**; re-enable schedules |
-| `chain-guard` | when a snapshot run ends without success, and every 10 min | if no snapshot run is queued or running, start one |
+| `chain-guard` | every 10 min (cron; late under load) | if no snapshot run is queued or running, start one |
 | `ops` | when `ops/requests.json` is pushed | maintenance with the repo's own token: close listed issues; restart the chain if idle |
 | `exports` | Mon 07:43 | rebuild consolidated exports and publish them to the `exports` release |
 | `tests` | on push | the test suite, with `TZ=Asia/Kolkata` to show the runner timezone doesn't leak into the data |

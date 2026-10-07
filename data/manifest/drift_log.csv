@@ -1,2 +1,2 @@
 endpoint,path,kind,pattern,severity,example,first_seen_chunk,last_seen_chunk,n_chunks
-sin,trend.series,irregular_step,# steps != # minute,WARN,1 steps != 1 minute,sitr_20260930T194703Z_snap_ok6of6.tar.gz,sitr_20261003T073904Z_snap_ok6of6.tar.gz,3
+sin,trend.series,irregular_step,# steps != # minute,WARN,1 steps != 1 minute,sitr_20260930T194703Z_snap_ok6of6.tar.gz,sitr_20261006T233214Z_snap_ok6of6.tar.gz,4

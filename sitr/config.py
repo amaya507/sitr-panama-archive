@@ -78,7 +78,9 @@ EXPECTED_KEYS: dict[str, dict[str, set[str] | None]] = {
 
 # Drift kinds that are known source quirks: logged in drift_log.csv, never alerted.
 # irregular_step: the source occasionally skips one minute label (seen 2026-09-30).
-BENIGN_DRIFT_KINDS = {"irregular_step"}
+# empty_values: the source publishes "" for a series (forecast blank for ~10 h on
+#   2026-10-12). Whether that loses data is judged by the gap report, per series.
+BENIGN_DRIFT_KINDS = {"irregular_step", "empty_values"}
 
 TREND_EXPECTED_NAMES = ["Generación", "Demanda Real", "Demanda Pronosticada"]
 

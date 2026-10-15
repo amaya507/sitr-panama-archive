@@ -41,6 +41,7 @@ def trend_coverage(data_dir: Path = config.DATA_DIR, since: str | None = None, u
         "start_local": start, "end_local": end, "series": series,
         "expected_minutes": len(grid), "held_minutes": int(is_held.sum()),
         "missing": missing, "held": held,
+        "per_series": {s: int(per[s].reindex(grid).notna().sum()) for s in series},
         "phase_mean": float(phases[is_held.values].mean()) if is_held.any() else 0.0,
         "phase_hist": phases[is_held.values].value_counts().sort_index().to_dict(),
         "revised_samples": _revision_stats(samples),
@@ -118,7 +119,8 @@ def report(data_dir: Path = config.DATA_DIR, since: str | None = None, until: st
             f"  window (Panama local): {cov['start_local']:%Y-%m-%d %H:%M} -> {cov['end_local']:%Y-%m-%d %H:%M}",
             f"  minutes expected: {cov['expected_minutes']:,}   held: {cov['held_minutes']:,}   "
             f"missing: {cov['expected_minutes'] - cov['held_minutes']:,}",
-            f"  COMPLETENESS: {pct:.3f}%",
+            f"  COMPLETENESS: {pct:.3f}%  (minute held = all series present)",
+            *[f"    {ent}: {n:,} of {cov['expected_minutes']:,} minutes held" for ent, n in cov['per_series'].items()],
             f"  distinct sample instants per held minute: mean {cov['phase_mean']:.2f}; min {min(cov['phase_hist']) if cov['phase_hist'] else 0}",
             f"  missing intervals: {len(miss)}",
         ]

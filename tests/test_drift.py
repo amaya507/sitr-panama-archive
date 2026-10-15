@@ -114,3 +114,16 @@ def test_special_shapes():
     assert r["timestamp_local"] == datetime(2026, 9, 29, 5, 23, 54, 117000)  # per-tag SCADA time
     rows, _, _, _ = parse_endpoint("flow", raw("flow_20260929T1024Z"), fetched_at_utc=FETCHED)
     assert [r["entity"] for r in rows if r["stream"] == "flow.occi"] == [f"occi[{i}]" for i in range(7)]
+
+
+def test_empty_forecast_is_benign_and_rest_is_kept():
+    """2026-10-12: the source sent "" for every Demanda Pronosticada value."""
+    from sitr import config
+    o = obj("sin_20260929T1024Z")
+    for p in o["trend"]["series"]:
+        p["value"][2] = ""
+    _, trend, drift, _ = parse_endpoint("sin", _enc(o), fetched_at_utc=FETCHED)
+    assert {r["entity"] for r in trend} == {"Generación", "Demanda Real"}
+    kinds = {d.kind for d in drift}
+    assert "empty_values" in kinds and "bad_value" not in kinds
+    assert "empty_values" in config.BENIGN_DRIFT_KINDS

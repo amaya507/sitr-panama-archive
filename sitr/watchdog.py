@@ -77,6 +77,10 @@ def check(now: datetime | None = None, chunks: list | None = None) -> list[str]:
                 github.raise_alert(key, f"{ep}.json failing ({rate:.0%})", msg)
             else:
                 github.resolve_alert(key, f"failure rate back to {rate:.0%}")
+    full = [c for c in chunks if c.kind == "snap" and c.n_ok == c.n and c.n > 0]
+    if full and now - full[-1].started_utc <= SNAPSHOT_STALE:
+        for key in ("fetch-failing", "blocked"):
+            github.resolve_alert(key, f"all endpoints fetched successfully at {full[-1].started_utc:%Y-%m-%d %H:%M}Z")
     _resolve_workflow_alert_if_healthy()
     return problems
 

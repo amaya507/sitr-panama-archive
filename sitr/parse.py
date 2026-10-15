@@ -313,6 +313,7 @@ def parse_trend(trend: dict, update_local: datetime, p: Parser) -> list[dict]:
     n = len(series)
     rows: list[dict] = []
     bad_values = 0
+    empty_values = 0
     step_anomalies = 0
     prev_label = None
     for i, point in enumerate(series):
@@ -328,6 +329,9 @@ def parse_trend(trend: dict, update_local: datetime, p: Parser) -> list[dict]:
         sample_utc = local_to_utc(sample_local)
         values = point.get("value") or []
         for j, raw in enumerate(values):
+            if isinstance(raw, str) and not raw.strip():
+                empty_values += 1  # source published no value (e.g. forecast blank on 2026-10-12)
+                continue
             val, _ = to_value(raw)
             if val is None:
                 bad_values += 1
@@ -345,6 +349,8 @@ def parse_trend(trend: dict, update_local: datetime, p: Parser) -> list[dict]:
             })
     if bad_values:
         p.warn("trend.series", "bad_value", f"{bad_values} unparseable points/values of {n}")
+    if empty_values:
+        p.warn("trend.series", "empty_values", f"{empty_values} empty values of {n} points")
     if step_anomalies:
         p.warn("trend.series", "irregular_step", f"{step_anomalies} steps != 1 minute")
     if n != 1441:

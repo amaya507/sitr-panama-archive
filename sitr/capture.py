@@ -56,6 +56,7 @@ def capture(
     started = now_utc()
     results: list[FetchResult] = []
     t_start = time.monotonic()
+    source_down = False
     for i, name in enumerate(endpoints):
         if i:
             sleep(config.PAUSE_BETWEEN_REQUESTS_S)
@@ -65,11 +66,15 @@ def capture(
         if elapsed > BUDGET_TOTAL_S:
             r = FetchResult(name=name, url=config.BASE_URL + name + ".json",
                             error=f"skipped: capture budget of {BUDGET_TOTAL_S}s exhausted", fetched_at_utc=now_utc())
-        elif elapsed > BUDGET_RETRY_S:
+        elif elapsed > BUDGET_RETRY_S or source_down:
+            # Politeness: once an endpoint has failed after all retries (e.g. CND
+            # returning 500 everywhere on 2026-10-08), try the rest only once.
             r = fetcher(name, attempts=1)
         else:
             r = fetcher(name)
         results.append(r)
+        if not r.ok and (r.status is None or r.status >= 500):
+            source_down = True
         print(f"[fetch] {name}: status={r.status} ok={r.ok} bytes={len(r.body or b'')} "
               f"attempts={r.attempts} {r.error or ''}", flush=True)
 

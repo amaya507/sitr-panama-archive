@@ -227,3 +227,24 @@ def test_chain_guard_only_restarts_when_idle(monkeypatch):
     assert "alive" in chain.restart_if_idle() and posts == []
     state["workflow_runs"][1]["status"] = "completed"   # e.g. the run that never got a runner
     assert "started" in chain.restart_if_idle() and len(posts) == 1
+
+
+def test_capture_stops_retrying_when_source_is_down(tmp_path):
+    from sitr import capture
+    attempts = {}
+    def fake(name, attempts_=None, **kw):
+        attempts[name] = kw.get("attempts", 4)
+        return FetchResult(name, "u", status=500, error="HTTP 500", attempts=attempts[name])
+    capture.capture("snap", ["sin", "gen", "vert"], tmp_path, fetcher=fake, sleep=lambda s: None)
+    assert attempts == {"sin": 4, "gen": 1, "vert": 1}
+
+
+def test_watchdog_resolves_fetch_failing_after_recovery(monkeypatch):
+    resolved = []
+    monkeypatch.setattr("sitr.github.raise_alert", lambda *a, **k: None)
+    monkeypatch.setattr("sitr.github.resolve_alert", lambda key, *a, **k: resolved.append(key))
+    now = datetime(2026, 10, 8, 13, 0, tzinfo=timezone.utc)
+    chunks = [chunk_info(Path("sitr_20261008T120000Z_snap_ok0of6-xsin-xgen-xvert-xint-xdiagram-xflow.tar.gz")),
+              chunk_info(Path("sitr_20261008T125500Z_snap_ok6of6.tar.gz"))]
+    watchdog.check(now=now, chunks=chunks)
+    assert "fetch-failing" in resolved and "blocked" in resolved

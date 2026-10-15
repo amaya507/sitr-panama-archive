@@ -8,10 +8,19 @@
     {
       "number": 3,
       "comment": "irregular_step = the source occasionally skips one minute label in the trend (e.g. 08:20 -> 08:22). Harmless: other fetches hold the minute and the gap report shows 100% coverage. Now logged without alerting (BENIGN_DRIFT_KINDS). Closing."
+    },
+    {
+      "number": 6,
+      "comment": "CND's SITR returned HTTP 500 on every endpoint from 2026-10-08 04:41 to 12:14 UTC (source outage). Capture resumed automatically; the trend has no missing minutes (later fetches covered the window). This alert now closes itself after the first fully successful fetch; the pipeline also stops retrying for the rest of a cycle once an endpoint fails hard. Closing."
+    },
+    {
+      "number": 14,
+      "comment": "Not drift: from 2026-10-12 04:51 to 15:00 UTC CND published empty strings for every Demanda Pronosticada value (123 fetches). Generation and real demand were unaffected, and the forecast minutes were filled by other fetches: per-series coverage is 100%. Empty values are now logged as 'empty_values' without alerting; the gap report (now per series) is the real check. Closing."
     }
   ],
   "log": [
     "2026-10-05: closed #1, #3",
-    "2026-10-05 21:10Z: restart chain after runner-acquisition failure at 19:19Z"
+    "2026-10-05 21:10Z: restart chain after runner-acquisition failure at 19:19Z",
+    "2026-10-15: closed #6 (source outage 10-08), #14 (empty forecast 10-12)"
   ]
 }

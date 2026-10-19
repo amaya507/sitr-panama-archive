@@ -1,3 +1,3 @@
 endpoint,path,kind,pattern,severity,example,first_seen_chunk,last_seen_chunk,n_chunks
 sin,trend.series,bad_value,# unparseable points/values of #,WARN,1441 unparseable points/values of 1441,sitr_20261012T045145Z_snap_ok6of6.tar.gz,sitr_20261012T150004Z_snap_ok6of6.tar.gz,123
-sin,trend.series,irregular_step,# steps != # minute,WARN,1 steps != 1 minute,sitr_20260930T194703Z_snap_ok6of6.tar.gz,sitr_20261016T005114Z_snap_ok6of6.tar.gz,10
+sin,trend.series,irregular_step,# steps != # minute,WARN,1 steps != 1 minute,sitr_20260930T194703Z_snap_ok6of6.tar.gz,sitr_20261018T111905Z_snap_ok6of6.tar.gz,11
